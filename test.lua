@@ -10,11 +10,13 @@ local nr = dbh:numrecords()
 print(nr)
 
 
-local r = dbh:get_record_with_names(9)
-print_r(r) 
-
 local r = dbh:get_header_info()
 print_r(r) 
+local r = dbh:get_record_with_names(9)
+print_r(r) 
+local r = dbh:get_record(9)
+print_r(r) 
+
 --local r = dbh:get_record(9)
 --print_r(r) 
 --[[

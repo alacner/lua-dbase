@@ -11,4 +11,17 @@ $column_info = dbase_get_header_info($dbh);
 
 // Display information
 print_r($column_info);
+
+if ($dbh) {
+  $record_numbers = dbase_numrecords($dbh);
+  for ($i = 1; $i <= $record_numbers; $i++) {
+      $row = dbase_get_record_with_names($dbh, $i);
+		print_r($row);
+      $row = dbase_get_record($dbh, $i);
+		print_r($row);
+		break;
+  }
+      $row = dbase_get_record($dbh, 9);
+		print_r($row);
+}
 ?> 

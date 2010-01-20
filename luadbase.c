@@ -259,7 +259,7 @@ static int dbase_get_record (lua_State *L, int assoc) {
 	
 	dbhead_t *dbh = my_dbh->dbh;
 
-	lua_Number record = lua_tonumber(L, 1);	
+	lua_Number record = lua_tonumber(L, 2);	
 
     if ((data = get_dbf_record(dbh, record)) == NULL) {
         lua_pushfstring(L, "Tried to read bad record %d", record);
@@ -281,8 +281,8 @@ static int dbase_get_record (lua_State *L, int assoc) {
             cursize = cur_f->db_flen + 1;
             fnp = erealloc(fnp, cursize);
         }
-        char *sv =  get_field_val(data, cur_f, fnp);
-        //snprintf(str_value, cursize, cur_f->db_format, get_field_val(data, cur_f, fnp));
+
+        snprintf(str_value, cursize, cur_f->db_format, get_field_val(data, cur_f, fnp));
 
         /* now convert it to the right php internal type */
         switch (cur_f->db_type) {
@@ -294,8 +294,7 @@ static int dbase_get_record (lua_State *L, int assoc) {
 					i++;
                 } else {
 					lua_pushstring(L, cur_f->db_fname);
-					lua_pushlstring(L, sv, cursize);
-					//lua_pushstring(L, str_value);
+					lua_pushstring(L, str_value);
 					lua_rawset(L, -3);
                 }
                 break;
