@@ -445,6 +445,73 @@ static int Ldbase_delete_record (lua_State *L) {
 	return 1;
 }
 
+static int Ldbase_replace_record (lua_State *L) {
+    lua_dbase_dbh *my_dbh = Mget_dbh (L);
+
+	dbhead_t *dbh = my_dbh->dbh;
+
+    int num_fields;
+    dbfield_t *dbf, *cur_f;
+    char *cp, *t_cp;
+    int i;
+
+	lua_Number record = lua_tonumber(L, -1);	
+	lua_pop(L, 1);
+
+    if ( ! lua_istable(L, -1)) {
+		lua_pushboolean(L, 0);
+        lua_pushstring(L, "Expected array as first parameter");
+		return 2;
+    }
+
+
+	lua_newtable(L);
+
+	lua_pushnil(L);
+    while (lua_next(L, -2) != 0) {
+		lua_tostring(L, -1);
+		lua_tostring(L, -2);
+
+		lua_rawset(L, -3);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+
+	num_fields = lua_objlen(L, -1);
+
+    if (num_fields != dbh->db_nfields) {
+		lua_pushboolean(L, 0);
+        lua_pushstring(L, "Wrong number of fields specified, Index num must start 1, not 0.");
+		return 2;
+    }
+
+
+    cp = t_cp = (char *)emalloc(dbh->db_rlen + 1);
+    *t_cp++ = VALID_RECORD;
+
+    dbf = dbh->db_fields;
+    for (i = 1, cur_f = dbf; cur_f < &dbf[num_fields]; i++, cur_f++) {
+		lua_rawgeti(L, -1, i); 
+		snprintf(t_cp, cur_f->db_flen+1, cur_f->db_format, lua_tostring(L, -1));
+        t_cp += cur_f->db_flen;
+		lua_pop(L, 1);
+    }
+
+    if (put_dbf_record(dbh, record, cp) < 0) {
+		lua_pushboolean(L, 0);
+        lua_pushfstring(L, "unable to put record at %d", dbh->db_records);
+        efree(cp);
+		return 2;
+    }
+
+    put_dbf_info(dbh);
+    efree(cp);
+
+	lua_pushboolean(L, 1);
+	lua_pushnumber(L, dbh->db_records);
+	return 2;
+}
+
 static int Ldbase_add_record (lua_State *L) {
     lua_dbase_dbh *my_dbh = Mget_dbh (L);
 
@@ -550,6 +617,7 @@ int luaopen_dbase (lua_State *L) {
         { "get_header_info", Ldbase_get_header_info },
         { "delete_record", Ldbase_delete_record },
         { "add_record", Ldbase_add_record },
+        { "replace_record", Ldbase_replace_record },
         { "close",   Ldbase_close },
 		{ NULL, NULL }
     };
