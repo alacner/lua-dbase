@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+
+<head>
+<meta http-equiv="Content-Language" content="en" />
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<meta name="author" content="Alacner Zhang" />
+<meta name="keywords" content="LUA,DBASE,DBF,lua-dbase" />
+<meta name="description" content="homepage of lua-dbase" />
+<title>lua-dbase: a dBase-format (dbf) driver for lua</title>
+</head>
+<body>
+<h1>lua-dbase: a dBase-format (dbf) driver for lua</h1>
+<em>(c) 2009-19 Alacner zhang &lt;alacner@gmail.com&gt;<br/>* This content is released under the MIT License. </em>
+
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#introduction">Introduction</a></li>
+<li>
+    <a href="#functions">Functions</a>
+    <ul>
+        <li>
+            <a href="#functions_public">public objects</a>
+            <ul>
+                <li><a href="#functions_public_version">version</a></li>
+                <li><a href="#functions_public_open">open</a></li>
+                <li><a href="#functions_public_create">create</a></li>
+            </ul>
+        </li>
+        <li>
+            <a href="#functions_link">link objects</a>
+            <ul>
+				<li><a href=#functions_link_add_record">add_record</a></li>
+				<li><a href=#functions_link_replace_record">replace_record</a></li>
+				<li><a href=#functions_link_get_record">get_record</a></li>
+				<li><a href=#functions_link_get_record_with_names">get_record_with_names</a></li>
+				<li><a href=#functions_link_delete_record">delete_record</a></li>
+				<li><a href=#functions_link_pack">pack</a></li>
+				<li><a href=#functions_link_numfields">numfields</a></li>
+				<li><a href=#functions_link_numrecords">numrecords</a></li>
+				<li><a href=#functions_link_close">close</a></li>
+            </ul>
+        </li>
+    </ul>
+</li>
+</ul>
+
+<a name="introduction" />
+<h2>Introduction</h2>
+<p>
+These functions allow you to access records stored in dBase-format (dbf) databases.
+ You can download lua-dbase from <a target="_blank" href="/pro/git/?p=lua-dbase.git;a=summary">git</a>and <a target="_blank" href="/pro/bug.php?project=lua-dbase">report bug</a> for me and i'll fix it as quickly as i can.
+  <p>
+   dBase files are simple sequential files of fixed length records. 
+   Records are appended to the end of the file and delete records are
+   kept until you call <a href=#functions_link_pack">dbf:pack()</a>.
+  </p>
+  <p>
+   The types of dBase fields available are:
+   </p><table class="doctable table">
+    <caption><b>Available types of fields</b></caption>
+    
+     <thead valign="middle">
+      <tr valign="middle">
+       <th>Field</th>
+       <th>dBase Type</th>
+       <th>Format</th>
+       <th>Additional information</th>
+      </tr>
+
+     </thead>
+
+     <tbody valign="middle" class="tbody">
+      <tr valign="middle">
+       <td align="left"><i>M</i></td>
+       <td align="left">Memo</td>
+       <td align="left">n/a</td>
+       <td align="left">This type is not supported, such field will be ignored</td>
+      </tr>
+
+      <tr valign="middle">
+       <td align="left"><i>D</i></td>
+       <td align="left">Date</td>
+       <td align="left"><i>YYYYMMDD</i></td>
+       <td align="left">The field length is limited to 8</td>
+      </tr>
+
+      <tr valign="middle">
+       <td align="left"><i>N</i></td>
+       <td align="left">Number</td>
+       <td align="left">A number</td>
+       <td align="left">
+        You must declare a length and a precision (the number of digits
+        after the decimal point)
+       </td>
+      </tr>
+
+      <tr valign="middle">
+       <td align="left"><i>C</i></td>
+       <td align="left">String</td>
+       <td align="left">A string</td>
+       <td align="left">You must declare a length. When retrieving data, the string
+       will be right-padded with spaces to fit the declared length.</td>
+      </tr>
+
+      <tr valign="middle">
+       <td align="left"><i>L</i></td>
+       <td align="left">Boolean</td>
+       <td align="left"><i>T</i> or <i>Y</i> for <b><tt class="constant">TRUE</tt></b>, 
+       <i>F</i> or <i>N</i> for <b><tt class="constant">FALSE</tt></b></td>
+       <td align="left">Stored and returned as an integer (1 or 0)</td>
+      </tr>
+
+      <tr valign="middle">
+       <td align="left"><i>F</i></td>
+       <td align="left">Float</td>
+       <td align="left">A float number</td>
+       <td align="left">&nbsp;</td>
+      </tr>
+
+     </tbody>
+    
+   </table>
+<p>
+</p>
+after download,you can install like this.
+<pre  style='padding: 5px; margin: 10px; border: 1px solid #cccccc;' class='escaped'>
+tar xzvf lua-dbase.*
+cd lua-dbase.*
+make
+make install
+</pre>
+
+<a name="functions" />
+<h2>Functions</h2>
+<pre  style='padding: 5px; margin: 10px; border: 1px solid #cccccc;' class='escaped'>
+require "dbase"
+</pre>
+
+<a name="functions_public" />
+<h3>Public objects</h3>
+create the dbase link handle.
+
+<a name="functions_public_version" />
+<h4>dbase.version()</h4>
+<pre  style='padding: 5px; margin: 10px; border: 1px solid #cccccc;' class='escaped'>
+dbase.version()
+</pre>
+return the lua-dbase version info. just like:
+<pre  style='padding: 5px; margin: 10px; border: 1px solid #cccccc;' class='escaped'>
+luadbase (1.0.0) - Dbase-format(dbf) driver
+(c) 2009-19 Alacner zhang &lt;alacner@gmail.com&gt;
+This content is released under the MIT License.
+</pre>
+
+<a name="functions_public_open" />
+<h4>dbase.open(filename, mode)</h4>
+opens a dBase database with the given access mode. 
+<pre  style='padding: 5px; margin: 10px; border: 1px solid #cccccc;' class='escaped'>
+local db, err = pgsql.open('/tmp/tmp.dbf', 2)
+</pre>
+mode: An integer which correspond to those for the open() system call (Typically 0 means read-only, 1 means write-only, and 2 means read and write). 
+
+<a name="functions_public_create" />
+<h4>dbase.create(filename, fields)</h4>
+creates a dBase database with the given definition. 
+<pre  style='padding: 5px; margin: 10px; border: 1px solid #cccccc;' class='escaped'>
+local def = {
+{"date", "d"},
+{"name", "C", 50},
+{"age", "N", 3, 0},
+{"email", "C", 128},
+{"ismember", "L"},
+}
+local dbh,a,b,c = dbase.create('/tmp/base/test.dbf', def)
+dbh:add_record{os.time(), "alacner", 18, 'alacner@gmail.com', 1}
+dbh:add_record{os.time(), "name", 28, 'w@g.j', 0}
+</pre>
+fields: An array of arrays, each array describing the format of one field of the database. Each field consists of a name, a character indicating the field type, and optionally, a length, and a precision. 
+
+<a name="functions_link" />
+<h3>Link objects</h3>
+the methods to contol the dbase link handle
+
+<a name="functions_link_add_record" />
+<h4>dbh:add_record(record)</h4>
+Adds a record to a database
+<br/>
+record(table) : An indexed array of data. The number of items must be equal to the number of fields in the database, otherwise dbh:add_record() will fail. 
+
+<a name="functions_link_replace_record" />
+<h4>dbh:replace_record(record, record_number)</h4>
+Replaces the given record in the database with the given data. 
+<br/>
+record(table) : An indexed array of data. The number of items must be equal to the number of fields in the database, otherwise dbh:add_record() will fail. 
+<br/>
+record_number(int) : An integer which spans from 1 to the number of records in the database (as returned by dbh:numrecords()). 
+
+
+<a name="functions_link_get_record" />
+<h4>dbh:get_record(record_number)</h4>
+Gets a record from a database as an indexed array. 
+
+<a name="functions_link_get_record_with_names" />
+<h4>dbh:get_record_with_names(record_number)</h4>
+Gets a record from a dBase database as an associative array. 
+
+<a name="functions_link_delete_record" />
+<h4>dbh:delete_record(record_number)</h4>
+Marks the given record to be deleted from the database. 
+<br/>
+Note: To actually remove the record from the database, you must also call dbh:pack(). 
+
+<a name="functions_link_pack" />
+<h4>dbh:pack()</h4>
+Packs the specified database by permanently deleting all records marked for deletion using dbh:delete_record(). 
+
+<a name="functions_link_numfields" />
+<h4>dbh:numfields()</h4>
+Gets the number of fields (columns) in the specified database.
+
+<a name="functions_link_numrecords" />
+<h4>db:numrecords()</h4>
+Gets the number of records (rows) in the specified database. 
+
+<a name="functions_link_close" />
+<h4>db:close()</h4>
+Closes the given database link identifier. 
+
+</body>
+</html>
