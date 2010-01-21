@@ -13,26 +13,6 @@
 #define VERSION "1.0.0"
 
 #include "dbf.h"
-#if defined(THREAD_SAFE)
-DWORD DbaseTls;
-static int numthreads=0;
-void *dbase_mutex;
-
-typedef struct dbase_global_struct{
-    int le_dbhead;
-}dbase_global_struct;
-
-#define DBase_GLOBAL(a) dbase_globals->a
-
-#define DBase_TLS_VARS \
-    dbase_global_struct *dbase_globals; \
-    dbase_globals=TlsGetValue(DbaseTls); 
-
-#else
-static int le_dbhead;
-#define DBase_GLOBAL(a) a
-#define DBase_TLS_VARS
-#endif
 
 #include <fcntl.h>
 #include <errno.h>
@@ -445,7 +425,7 @@ static int Ldbase_delete_record (lua_State *L) {
 	return 1;
 }
 
-static int Ldbase_replace_record (lua_State *L) {
+static int Ldbase_modify_record (lua_State *L) {
     lua_dbase_dbh *my_dbh = Mget_dbh (L);
 
 	dbhead_t *dbh = my_dbh->dbh;
@@ -455,15 +435,17 @@ static int Ldbase_replace_record (lua_State *L) {
     char *cp, *t_cp;
     int i;
 
-	lua_Number record = lua_tonumber(L, -1);	
-	lua_pop(L, 1);
+	lua_Number record = -1;
+	if (lua_isnumber(L, -1)) {
+		record = lua_tonumber(L, -1);	
+		lua_pop(L, 1);
+	}
 
     if ( ! lua_istable(L, -1)) {
 		lua_pushboolean(L, 0);
         lua_pushstring(L, "Expected array as first parameter");
 		return 2;
     }
-
 
 	lua_newtable(L);
 
@@ -485,7 +467,6 @@ static int Ldbase_replace_record (lua_State *L) {
 		return 2;
     }
 
-
     cp = t_cp = (char *)emalloc(dbh->db_rlen + 1);
     *t_cp++ = VALID_RECORD;
 
@@ -496,6 +477,11 @@ static int Ldbase_replace_record (lua_State *L) {
         t_cp += cur_f->db_flen;
 		lua_pop(L, 1);
     }
+
+	if (record == -1) {
+		dbh->db_records++;
+		record = dbh->db_records;
+	}
 
     if (put_dbf_record(dbh, record, cp) < 0) {
 		lua_pushboolean(L, 0);
@@ -512,19 +498,27 @@ static int Ldbase_replace_record (lua_State *L) {
 	return 2;
 }
 
-static int Ldbase_add_record (lua_State *L) {
-    lua_dbase_dbh *my_dbh = Mget_dbh (L);
-
-	dbhead_t *dbh = my_dbh->dbh;
+static int Ldbase_create (lua_State *L) {
+    int fd;
+    dbhead_t *dbh;
 
     int num_fields;
     dbfield_t *dbf, *cur_f;
-    char *cp, *t_cp;
-    int i;
+    int i, rlen;
 
-    if ( ! lua_istable(L, -1)) {
+    const char *filename = lua_tostring(L, 1);
+
+    if ((fd = open(filename, O_BINARY|O_RDWR|O_CREAT, 0644)) < 0) {
 		lua_pushboolean(L, 0);
-        lua_pushstring(L, "Expected array as first parameter");
+        lua_pushfstring(L,"Unable to create database (%d): %s", errno, strerror(errno));
+		return 2;
+    }
+
+	// Each field consists of a name, a character indicating the field type, and optionally, a length, and a precision.
+	// The fieldnames are limited in length and must not exceed 10 chars. 
+    if ( ! lua_istable(L, 2)) {
+		lua_pushboolean(L, 0);
+        lua_pushstring(L, "Expected array as second parameter");
 		return 2;
     }
 
@@ -542,37 +536,148 @@ static int Ldbase_add_record (lua_State *L) {
 
 	num_fields = lua_objlen(L, -1);
 
-    if (num_fields != dbh->db_nfields) {
+
+    if (num_fields <= 0) {
 		lua_pushboolean(L, 0);
-        lua_pushstring(L, "Wrong number of fields specified, Index num must start 1, not 0.");
+        lua_pushstring(L, "Unable to create database without fields");
 		return 2;
     }
 
-    cp = t_cp = (char *)emalloc(dbh->db_rlen + 1);
-    *t_cp++ = VALID_RECORD;
+    /* have to use regular malloc() because this gets free()d by
+       code in the dbase library */
+    dbh = (dbhead_t *)malloc(sizeof(dbhead_t));
+    dbf = (dbfield_t *)malloc(sizeof(dbfield_t) * num_fields);
+    if (!dbh || !dbf) {
+		lua_pushboolean(L, 0);
+        lua_pushstring(L, "Unable to allocate memory for header info");
+		return 2;
+    }
+    /* initialize the header structure */
+    dbh->db_fields = dbf;
+    dbh->db_fd = fd;
+    dbh->db_dbt = DBH_TYPE_NORMAL;
+    strcpy(dbh->db_date, "19930818");
+    dbh->db_records = 0;
+    dbh->db_nfields = num_fields;
+    dbh->db_hlen = sizeof(struct dbf_dhead) + 1 + num_fields * sizeof(struct dbf_dfield);
 
-    dbf = dbh->db_fields;
-    for (i = 1, cur_f = dbf; cur_f < &dbf[num_fields]; i++, cur_f++) {
-		lua_rawgeti(L, -1, i); 
-		snprintf(t_cp, cur_f->db_flen+1, cur_f->db_format, lua_tostring(L, -1));
-        t_cp += cur_f->db_flen;
+    rlen = 1;
+    /**
+     * Patch by greg@darkphoton.com
+     **/
+    /* make sure that the db_format entries for all fields are set to NULL to ensure we
+       don't seg fault if there's an error and we need to call free_dbf_head() before all
+       fields have been defined. */
+    for (i = 0, cur_f = dbf; i < num_fields; i++, cur_f++) {
+        cur_f->db_format = NULL;
+    }
+    /**
+     * end patch
+     */
+
+    for (i = 0, cur_f = dbf; i < num_fields; i++, cur_f++) {
+        /* look up the first field */
+		lua_rawgeti(L, -1, i+1); 
+		if ( !lua_istable(L, -1)) {
+			lua_pushboolean(L, 0);
+            lua_pushfstring(L, "unable to find field %d", i+1);
+            free_dbf_head(dbh);
+			return 2;
+        }
+
+        /* field name */
+		lua_rawgeti(L, -1, 1); 
+		char *field_name = (char *)lua_tostring(L, -1); 
+		lua_pop(L, 1);
+        if (strlen(field_name) > 10 || strlen(field_name) == 0) {
+			lua_pushboolean(L, 0);
+            lua_pushfstring(L, "invalid field name '%s' (must be non-empty and less than or equal to 10 characters)", field_name);
+            free_dbf_head(dbh);
+			return 2;
+        }
+        copy_crimp(cur_f->db_fname, field_name, strlen(field_name));
+
+        /* field type */
+		lua_rawgeti(L, -1, 2); 
+		char *field_type = (char *)lua_tostring(L, -1); 
+		lua_pop(L, 1);
+
+        cur_f->db_type = toupper(field_type[0]);
+
+
+
+        cur_f->db_fdc = 0;
+
+        /* verify the field length */
+        switch (cur_f->db_type) {
+        case 'L':
+            cur_f->db_flen = 1;
+            break;
+        case 'M':
+            cur_f->db_flen = 10;
+            dbh->db_dbt = DBH_TYPE_MEMO;
+            /* should create the memo file here, probably */
+            break;
+        case 'D':
+            cur_f->db_flen = 8;
+            break;
+        case 'F':
+            cur_f->db_flen = 20;
+            break;
+        case 'N':
+        case 'C':
+            /* field length */
+			lua_rawgeti(L, -1, 3); 
+			lua_Number field_length = lua_tonumber(L, -1); 
+			lua_pop(L, 1);
+            if ( !field_length) {
+				lua_pushboolean(L, 0);
+                lua_pushfstring(L, "expected field length as third element of list in field %d", i+1);
+                free_dbf_head(dbh);
+				return 2;
+            }
+            cur_f->db_flen = field_length;
+
+            if (cur_f->db_type == 'N') {
+				lua_rawgeti(L, -1, 4); 
+				lua_Number field_precision = lua_tonumber(L, -1); 
+				lua_pop(L, 1);
+				if ( !field_length) {
+					lua_pushboolean(L, 0);
+                    lua_pushfstring(L, "expected field precision as fourth element of list in field %d", i+1);
+                    free_dbf_head(dbh);
+					return 2;
+                }
+                cur_f->db_fdc = field_precision;
+            }
+            break;
+        default:
+			lua_pushboolean(L, 0);
+            lua_pushfstring(L, "unknown field type '%c'", cur_f->db_type);
+            free_dbf_head(dbh);
+			return 2;
+        }
+        cur_f->db_foffset = rlen;
+        rlen += cur_f->db_flen;
+
+        cur_f->db_format = get_dbf_f_fmt(cur_f);
+
 		lua_pop(L, 1);
     }
 
-    dbh->db_records++;
-    if (put_dbf_record(dbh, dbh->db_records, cp) < 0) {
-		lua_pushboolean(L, 0);
-        lua_pushfstring(L, "unable to put record at %d", dbh->db_records);
-        efree(cp);
-		return 2;
-    }
-
+		//lua_pushstring(L, field_type);
+    dbh->db_rlen = rlen;
     put_dbf_info(dbh);
-    efree(cp);
 
-	lua_pushboolean(L, 1);
-	lua_pushnumber(L, dbh->db_records);
-	return 2;
+	//-----
+	lua_dbase_dbh *my_dbh = (lua_dbase_dbh *)lua_newuserdata(L, sizeof(lua_dbase_dbh));
+	luaM_setmeta(L, LUA_DBASE_CONN);
+
+	my_dbh->closed = 0;
+	my_dbh->dbh = dbh;
+
+	return 1;
+
 }
 
 /**
@@ -604,6 +709,7 @@ static int Lversion (lua_State *L) {
 int luaopen_dbase (lua_State *L) {
     struct luaL_reg driver[] = {
         { "version",   Lversion },
+        { "create",   Ldbase_create },
         { "open",   Ldbase_open },
         { NULL, NULL },
     };
@@ -616,8 +722,8 @@ int luaopen_dbase (lua_State *L) {
         { "get_record_with_names", Ldbase_get_record_with_names },
         { "get_header_info", Ldbase_get_header_info },
         { "delete_record", Ldbase_delete_record },
-        { "add_record", Ldbase_add_record },
-        { "replace_record", Ldbase_replace_record },
+        { "add_record", Ldbase_modify_record },
+        { "replace_record", Ldbase_modify_record },
         { "close",   Ldbase_close },
 		{ NULL, NULL }
     };

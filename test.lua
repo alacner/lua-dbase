@@ -17,7 +17,6 @@ print_r(r)
 local r = dbh:get_record(9)
 print_r(r) 
 
---[[
 local r,a,b,c = dbh:add_record {
     100196,
     'XX',
@@ -66,7 +65,6 @@ local r,a,b,c = dbh:add_record {
      20090828012222,
     ['deleted'] = 0,
 }
---]]
 local r,a,b,c = dbh:replace_record ({
     100196,
     'XX3',
@@ -116,6 +114,17 @@ local r,a,b,c = dbh:replace_record ({
     ['deleted'] = 0,
 }, 3)
 print("---------------------")
+print("---------------------")
+local def = {
+{"date", "d"},
+{"name", "C", 50},
+{"age", "N", 3, 0},
+{"email", "C", 128},
+{"ismember", "L"},
+}
+local dbh,a,b,c = dbase.create('/tmp/base/test.dbf', def)
+dbh:add_record{os.time(), "alacner", 18, 'alacner@gmail.com', 1}
+dbh:add_record{os.time(), "wgj", 28, 'w@g.j', 0}
 print_r(r)
 print_r(a)
 print_r(b)
